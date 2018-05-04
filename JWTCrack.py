@@ -1,80 +1,61 @@
 #!/usr/bin/python
-#(C)2018 Netscylla
-#License GNU GPL v3.0
+# (C)2018 Netscylla
+# License GNU GPL v3.0
+import math
 
-import sys,os
-import Queue
-import threading
+import concurrent.futures
+import multiprocessing
 import jwt
 from termcolor import colored
-from optparse import OptionParser
+import argparse
 
-NumOfThreads=100
-queue = Queue.Queue()
 
-def help_msg():
-    print """
-    ======================
-    JWTCrack
-    (c)2018 Netscylla
-    ======================
-    Disclaimer: This program is free to use at your own risk!
-                More details on the disclaimer and license available here: https://github.com/netscylla/JWT_Hacking
-                
-    Usage: JWTCrack.py [Encoded_JWT] [Wordlist] <Algorithm>"
-           Endcoded_JWT = Base64 Encoded JWT String
-           Wordlist     = Dictionary wordlist file used to bruteforce the JWT
-           Algorithm    = (Optional) HMAC Algorithm, default=HS256
-    """
-    sys.exit(1)
+def try_secrets(secrets):
+    for secret in secrets:
+        try:
+            jwt.decode(encoded, secret, algorithm)
+            return secret
+        except jwt.InvalidTokenError:
+            pass
 
-try: 
-    if (len(sys.argv) == 4):
-        encoded=sys.argv[1]
-        WordList=open(sys.argv[2],'r')
-        algorithm=sys.argv[3]
-    elif (len(sys.argv) == 3):
-        encoded=sys.argv[1]
-        WordList=open(sys.argv[2],'r')
-        algorithm="HS256"
-    else:
-        raise Exception
-except:
-    help_msg()
-    
 
-class checkHash(threading.Thread):
-    def __init__(self,queue):
-        threading.Thread.__init__(self)
-        self.queue=queue
-    def run(self):
-        options = ["HS256","HS384","HS512"]
-        if algorithm not in options: "HS256"
-    
-        while True:
-            self.secret=self.queue.get()
-            try:
-                jwt.decode(encoded, self.secret, algorithm)
-                print colored('Success! ['+self.secret+']','green')
-                os._exit(0)
-                self.queue.task_done()
-            except jwt.InvalidTokenError:
-                print colored('Invalid Token ['+self.secret+']','red')
-            except jwt.ExpiredSignatureError:
-                print colored('Token Expired ['+self.secret+']','red')
-                
-    
-def main():    
+def partition(items, count):
+    return [items[i:i + count] for i in range(0, len(items), count)]
 
-    for i in range(NumOfThreads):
-        t=checkHash(queue)
-        t.setDaemon(True)
-        t.start()
-
-    for word in WordList.readlines():
-        queue.put(word.strip())
-
-    queue.join()
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description="""
+=========================
+JWTCrack
+(c)2018 Netscylla
+=========================
+Disclaimer: This program is free to use at your own risk!
+            More details on the disclaimer and license available here: https://github.com/netscylla/JWT_Hacking""",
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('encoded_jwt',
+                        help='Base64 Encoded JWT String')
+    parser.add_argument('wordlist',
+                        help='Dictionary wordlist file used to bruteforce the JWT')
+    parser.add_argument('-a', '--algorithm',
+                        help='HMAC Algorithm',
+                        required=False,
+                        default="HS256",
+                        choices=["HS256", "HS384", "HS512"])
+    parser.add_argument('-t', '--threads',
+                        help='Number of threads',
+                        type=int,
+                        required=False,
+                        default=multiprocessing.cpu_count())
+    args = parser.parse_args()
+
+    algorithm = args.algorithm
+    encoded = args.encoded_jwt
+
+    with concurrent.futures.ProcessPoolExecutor(max_workers=args.threads) as executor, \
+            open(args.wordlist, 'r') as wordlist:
+        wordlist = list(map(str.strip, wordlist.readlines()))
+        for result in executor.map(try_secrets,
+                                   partition(wordlist, int(math.ceil(len(wordlist) / float(args.threads))))):
+            if result:
+                print colored('Success! [' + result + ']', 'green')
+                break
