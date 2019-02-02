@@ -57,5 +57,5 @@ Disclaimer: This program is free to use at your own risk!
         for result in executor.map(try_secrets,
                                    partition(wordlist, int(math.ceil(len(wordlist) / float(args.threads))))):
             if result:
-                print colored('Success! [' + result + ']', 'green')
+                print (colored('Success! [' + result + ']', 'green'))
                 break
